@@ -1,0 +1,103 @@
+{
+  "project_scope": "Student mental well-being psychoeducation and emotional support",
+  "rule": "Runtime answers must be grounded in retrieved source content. Do not diagnose or invent unsupported facts.",
+  "sources": [
+    {
+      "id": "who_adolescent_mental_health",
+      "organization": "World Health Organization",
+      "title": "Mental health of adolescents",
+      "url": "https://www.who.int/news-room/fact-sheets/detail/adolescent-mental-health",
+      "topics": [
+        "student wellbeing",
+        "sleep",
+        "exercise",
+        "coping",
+        "social support",
+        "anxiety",
+        "depression",
+        "help-seeking"
+      ]
+    },
+    {
+      "id": "who_stress",
+      "organization": "World Health Organization",
+      "title": "Stress",
+      "url": "https://www.who.int/news-room/questions-and-answers/item/stress",
+      "topics": [
+        "stress",
+        "sleep",
+        "social connection",
+        "exercise",
+        "daily coping"
+      ]
+    },
+    {
+      "id": "nimh_stress",
+      "organization": "National Institute of Mental Health",
+      "title": "I'm So Stressed Out! Fact Sheet",
+      "url": "https://www.nimh.nih.gov/health/publications/so-stressed-out-fact-sheet",
+      "topics": [
+        "academic stress",
+        "exam stress",
+        "stress versus anxiety",
+        "sleep",
+        "exercise",
+        "journaling",
+        "mindfulness",
+        "help-seeking"
+      ]
+    },
+    {
+      "id": "nimh_caring_for_mental_health",
+      "organization": "National Institute of Mental Health",
+      "title": "Caring for Your Mental Health",
+      "url": "https://www.nimh.nih.gov/health/topics/caring-for-your-mental-health",
+      "topics": [
+        "self-care",
+        "sleep",
+        "exercise",
+        "nutrition",
+        "priorities",
+        "gratitude",
+        "social support",
+        "professional help"
+      ]
+    },
+    {
+      "id": "nimh_do_i_need_help",
+      "organization": "National Institute of Mental Health",
+      "title": "My Mental Health: Do I Need Help?",
+      "url": "https://www.nimh.nih.gov/health/publications/my-mental-health-do-i-need-help",
+      "topics": [
+        "when to seek help",
+        "symptoms affecting daily life",
+        "professional support",
+        "crisis safety"
+      ]
+    },
+    {
+      "id": "india_tele_manas",
+      "organization": "Government of India, Ministry of Health and Family Welfare",
+      "title": "National Mental Health Programme / Tele-MANAS",
+      "url": "https://dghs.mohfw.gov.in/national-mental-health-programme.php",
+      "topics": [
+        "India mental health support",
+        "college counselling",
+        "crisis referral",
+        "Tele-MANAS"
+      ]
+    },
+    {
+      "id": "who_india_youth",
+      "organization": "World Health Organization South-East Asia",
+      "title": "Strengthening Child and Young People's Mental Health Systems and Services in India",
+      "url": "https://www.who.int/southeastasia/internal-publications-detail/strengthening-child-and-young-people-s-mental-health-systems-and-services-in-india",
+      "topics": [
+        "young people",
+        "mental health systems",
+        "India",
+        "support services"
+      ]
+    }
+  ]
+}
