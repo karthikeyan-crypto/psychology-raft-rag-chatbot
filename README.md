@@ -1,102 +1,74 @@
 # Psychology RAFT-RAG Chatbot
 
-A research and educational chatbot that combines **Retrieval-Augmented Generation (RAG)** with **Retrieval-Augmented Fine-Tuning (RAFT)** to provide grounded psychology psychoeducation and emotional-support responses.
+A research and educational chatbot that combines Retrieval-Augmented Generation (RAG) with Retrieval-Augmented Fine-Tuning (RAFT) for student psychology psychoeducation and emotional support.
 
-> **Important:** This project is for education, research, and demonstration. It is not a therapist, psychologist, doctor, diagnostic system, or emergency service. It must not be used to diagnose or treat a mental-health condition.
+> Important: This project is for education, research, and demonstration. It is not a therapist, psychologist, doctor, diagnostic system, or emergency service. It must not be used to diagnose or treat a mental-health condition.
 
 ## Project goal
 
-The project adapts the original RAFT mental-health chatbot implementation into a student-friendly psychology RAG pipeline:
+The system is designed around common student well-being needs:
+- academic and exam stress;
+- anxiety and excessive worry;
+- sleep and healthy routines;
+- coping and emotional regulation;
+- concentration and workload overload;
+- social connection and loneliness;
+- knowing when to seek professional support.
 
-```
-User question
-     ↓
-Safety check
-     ↓
-RAG retrieval
-     ↓
-Relevant psychology knowledge
-     ↓
-RAFT/QLoRA fine-tuned language model
-     ↓
-Grounded response + source context
-```
+The core rule is simple:
 
-The final system is intended to:
+> The chatbot should answer from retrieved knowledge. When the knowledge base does not support the answer, it should say so instead of guessing.
 
-- answer psychology and mental-health education questions using retrieved sources;
-- prefer evidence from the configured knowledge base instead of unsupported claims;
-- learn to use relevant context and ignore distracting context through RAFT;
-- provide a simple chat interface;
-- expose retrieved context for evaluation and demonstration;
-- include a safety layer for high-risk conversations.
+## Local-first architecture
 
-## Planned technology stack
+Student question -> safety check -> local BGE-small embeddings -> local FAISS search -> top psychology sources -> local Qwen2.5-1.5B-Instruct via Ollama -> grounded answer.
 
-| Component | Planned choice |
+## Technology stack
+
+| Component | Choice |
 |---|---|
-| GPU environment | Google Colab T4 |
+| Fine-tuning environment | Google Colab T4 |
 | Base language model | Qwen/Qwen2.5-1.5B-Instruct |
+| Live local model | qwen2.5:1.5b-instruct through Ollama |
 | Fine-tuning | QLoRA + PEFT |
-| RAFT question/answer generation | OpenAI API |
 | Embeddings | BAAI/bge-small-en-v1.5 |
-| Vector database | Pinecone Serverless |
+| Local vector database | FAISS |
 | Backend | FastAPI |
-| Public development endpoint | ngrok |
 | Frontend | Streamlit |
 
-The model and dependency versions will be pinned as the implementation is migrated so that the Colab workflow remains reproducible.
+Qwen2.5-1.5B-Instruct is published under the Apache-2.0 license. The model has a finite context window, so the accurate claim is no external API quota, not literally unlimited tokens.
 
-## Repository structure
+FAISS is a local similarity-search library for dense vectors and supports cosine-style search through normalized vectors and inner products.
 
-```
-finetune/        QLoRA/RAFT fine-tuning notebooks
-inference/       RAG and chatbot notebooks/application
-raft/            RAFT dataset-generation and formatting code
-eval/            Evaluation resources
-docs/            Project documentation
-proposal/        Original project proposal/materials
-```
+## Knowledge sources
 
-## Development roadmap
+The project uses authoritative sources such as WHO, NIMH, and Government of India mental-health resources. See data/source_manifest.json.
 
-1. Prepare the Google Colab T4 environment.
-2. Prepare trusted psychology source documents.
-3. Generate psychology RAFT training data.
-4. Fine-tune Qwen2.5-1.5B-Instruct with QLoRA.
-5. Build the BGE-small + Pinecone RAG pipeline.
-6. Add the safety layer.
-7. Connect FastAPI and Streamlit.
-8. Evaluate retrieval, groundedness, relevance, and safety.
-9. Compare the base model, fine-tuned model, and RAFT + RAG system.
+Do not add random internet advice, Reddit posts, or unverified mental-health claims to the corpus.
+
+## Local demo
+
+1. Install Ollama.
+2. Download the model with: ollama pull qwen2.5:1.5b-instruct
+3. Put trusted source files in data/sources/.
+4. Build the FAISS index:
+   python inference/rag_local.py --source-dir data/sources --index-dir data/vector_index
+5. Start the local demo:
+   python inference/local_demo.py
+
+The live chat does not send the student's question to a cloud LLM.
 
 ## Safety and scope
 
-The chatbot should:
+The chatbot should distinguish psychoeducation from professional care, avoid diagnosis, avoid medication prescribing, avoid invented facts, and encourage human support when appropriate.
 
-- clearly distinguish psychoeducation from professional medical advice;
-- avoid diagnosing users;
-- avoid claiming to be a human professional;
-- avoid inventing citations or clinical facts;
-- encourage appropriate professional support when a situation requires it;
-- provide an appropriate crisis response when a user indicates immediate danger or self-harm risk.
-
-## API keys
-
-**Never commit API keys, Pinecone credentials, Hugging Face tokens, or other secrets to this repository.**
-
-Use environment variables or Colab secrets instead. A local configuration example can be kept in `.env.example`, while the real `.env` file remains ignored by Git.
+For India, Government of India Tele-MANAS provides 24x7 tele-mental-health support through 14416 or 1800-89-14416.
 
 ## Attribution
 
-This repository is a fork and planned adaptation of:
-
-- `Irine-Juliet/RAFT-mental-health-chatbot`
-
-The RAFT implementation and related project structure are being adapted rather than presented as entirely original code.
-
+This repository is a fork and planned adaptation of Irine-Juliet/RAFT-mental-health-chatbot.
 Before redistributing substantial portions of upstream code or data, check the upstream repository's licensing and attribution requirements.
 
 ## Status
 
-**Work in progress.** The repository is being migrated from the original implementation toward the psychology-focused Qwen + QLoRA + RAFT + RAG architecture described above.
+Work in progress. The project is being migrated toward a local Qwen + QLoRA + RAFT + BGE + FAISS architecture focused on student well-being.
