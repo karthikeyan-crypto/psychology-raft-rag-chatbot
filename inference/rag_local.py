@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 
 import faiss
-import numpy as np
 from sentence_transformers import SentenceTransformer
 
 EMBED_MODEL = "BAAI/bge-small-en-v1.5"
