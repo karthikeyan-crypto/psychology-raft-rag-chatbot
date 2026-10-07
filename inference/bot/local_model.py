@@ -87,7 +87,7 @@ def answer_with_context(
         text = str(item.get("text", "")).strip()
         if text:
             context_blocks.append(
-                f"<SOURCE name="{source}">\n{text}\n</SOURCE>"
+                f'<SOURCE name="{source}">\n{text}\n</SOURCE>'
             )
 
     if not context_blocks:
