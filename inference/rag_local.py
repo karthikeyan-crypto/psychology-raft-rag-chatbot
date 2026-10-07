@@ -9,6 +9,7 @@ from sentence_transformers import SentenceTransformer
 
 EMBED_MODEL = "BAAI/bge-small-en-v1.5"
 DIMENSION = 384
+DEFAULT_MIN_RETRIEVAL_SCORE = 0.55
 
 
 def load_documents(source_dir: Path) -> list[dict]:
@@ -80,7 +81,12 @@ class LocalRetriever:
 
         self.embedder = SentenceTransformer(model_name)
 
-    def search(self, question: str, top_k: int = 4) -> list[dict]:
+    def search(
+        self,
+        question: str,
+        top_k: int = 4,
+        min_score: float = DEFAULT_MIN_RETRIEVAL_SCORE,
+    ) -> list[dict]:
         vector = self.embedder.encode(
             [question],
             normalize_embeddings=True,
@@ -95,8 +101,12 @@ class LocalRetriever:
             if idx < 0 or idx >= len(self.documents):
                 continue
 
+            score_value = float(score)
+            if score_value < min_score:
+                continue
+
             item = dict(self.documents[idx])
-            item["score"] = float(score)
+            item["score"] = score_value
             matches.append(item)
 
         return matches
