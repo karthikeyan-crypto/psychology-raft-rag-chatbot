@@ -1,8 +1,39 @@
-*.arrow
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
 */venv/
 */raft_env/
-*.dylib
+
+# Jupyter
+.ipynb_checkpoints/
+
+# macOS
 .DS_Store
 **/.DS_Store
-inference/bot/venv/
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# Model/training artifacts
+*.arrow
+*.safetensors
+*.bin
+*.pt
+*.pth
+checkpoints/
 raft/output-checkpoints/
+wandb/
+
+# Logs
+*.log
+
+# Local application data
+.streamlit/secrets.toml
