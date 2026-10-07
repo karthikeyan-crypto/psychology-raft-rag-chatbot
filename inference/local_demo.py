@@ -40,11 +40,14 @@ def main() -> None:
         print("Assistant:", answer)
         print()
 
-        print("Retrieved sources:")
-        for i, match in enumerate(matches, start=1):
-            print(
-                f"{i}. score={match['score']:.3f} | {match['source']}"
-            )
+        if matches:
+            print("Retrieved sources:")
+            for i, match in enumerate(matches, start=1):
+                print(
+                    f"{i}. score={match['score']:.3f} | {match['source']}"
+                )
+        else:
+            print("Retrieved sources: none above the confidence threshold.")
         print()
 
 
