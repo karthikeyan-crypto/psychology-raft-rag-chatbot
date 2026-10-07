@@ -13,9 +13,8 @@ from pathlib import Path
 from typing import Iterable
 
 import PyPDF2
-from dotenv import load_dotenv
+import requests
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from openai import OpenAI
 from tqdm import tqdm
 
 logging.basicConfig(
@@ -39,7 +38,7 @@ class Chunk:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Generate a psychology RAFT dataset from trusted source documents."
+        description="Generate a psychology RAFT dataset using a local Ollama model."
     )
     parser.add_argument("--datapath", type=Path, required=True)
     parser.add_argument(
@@ -59,10 +58,15 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--model",
-        default="gpt-4.1-mini",
-        help="OpenAI model used only to generate synthetic RAFT questions and answers.",
+        default="qwen2.5:1.5b-instruct",
+        help="Local Ollama model name.",
     )
-    parser.add_argument("--workers", type=int, default=2)
+    parser.add_argument(
+        "--ollama-host",
+        default=os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434"),
+        help="Ollama server URL.",
+    )
+    parser.add_argument("--workers", type=int, default=1)
     parser.add_argument(
         "--max-chunks",
         type=int,
@@ -137,9 +141,9 @@ def build_chunks(
     return chunks
 
 
-def call_openai(
-    client: OpenAI,
+def call_ollama(
     model: str,
+    ollama_host: str,
     instructions: str,
     user_input: str,
     *,
@@ -147,39 +151,57 @@ def call_openai(
     temperature: float = 0.2,
     retries: int = 3,
 ) -> str:
+    url = ollama_host.rstrip("/") + "/api/chat"
+
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": instructions},
+            {"role": "user", "content": user_input},
+        ],
+        "stream": False,
+        "options": {
+            "temperature": temperature,
+            "num_predict": max_output_tokens,
+        },
+    }
+
     last_error: Exception | None = None
 
     for attempt in range(retries):
         try:
-            response = client.responses.create(
-                model=model,
-                instructions=instructions,
-                input=user_input,
-                max_output_tokens=max_output_tokens,
-                temperature=temperature,
-            )
-            text = response.output_text.strip()
+            response = requests.post(url, json=payload, timeout=300)
+            response.raise_for_status()
+            data = response.json()
+            text = data.get("message", {}).get("content", "").strip()
+
             if text:
                 return text
-            raise RuntimeError("OpenAI returned an empty output.")
+
+            raise RuntimeError("Ollama returned an empty response.")
+
         except Exception as exc:
             last_error = exc
             if attempt == retries - 1:
                 break
+
             sleep_seconds = 2 ** attempt
             logger.warning(
-                "OpenAI request failed (%s). Retrying in %ss...",
+                "Ollama request failed (%s). Retrying in %ss...",
                 exc,
                 sleep_seconds,
             )
             time.sleep(sleep_seconds)
 
-    raise RuntimeError(f"OpenAI request failed after {retries} attempts.") from last_error
+    raise RuntimeError(
+        f"Ollama request failed after {retries} attempts. "
+        f"Check that Ollama is running at {url} and the model is installed."
+    ) from last_error
 
 
 def generate_questions(
-    client: OpenAI,
     model: str,
+    ollama_host: str,
     chunk: Chunk,
     count: int,
 ) -> list[str]:
@@ -198,11 +220,14 @@ SOURCE ({chunk.source}):
 {chunk.text}
 """
 
-    raw = call_openai(
-        client,
-        model,
-        "You create grounded psychology psychoeducation questions from source material.",
-        prompt,
+    raw = call_ollama(
+        model=model,
+        ollama_host=ollama_host,
+        instructions=(
+            "You create grounded psychology psychoeducation questions "
+            "from source material."
+        ),
+        user_input=prompt,
         max_output_tokens=max(128, count * 80),
         temperature=0.4,
     )
@@ -220,8 +245,8 @@ SOURCE ({chunk.source}):
 
 
 def build_training_example(
-    client: OpenAI,
     model: str,
+    ollama_host: str,
     chunks: list[Chunk],
     oracle_index: int,
     question: str,
@@ -230,6 +255,7 @@ def build_training_example(
 ) -> dict:
     oracle = chunks[oracle_index]
     candidate_indices = [i for i in range(len(chunks)) if i != oracle_index]
+
     selected_distractors = random.sample(
         candidate_indices,
         min(distractor_count, len(candidate_indices)),
@@ -237,6 +263,7 @@ def build_training_example(
 
     context_chunks = [chunks[i] for i in selected_distractors]
     include_oracle = random.random() < oracle_probability
+
     if include_oracle:
         context_chunks.append(oracle)
 
@@ -254,11 +281,11 @@ SOURCE:
 QUESTION:
 {question}
 """
-        answer = call_openai(
-            client,
-            model,
-            SYSTEM_PROMPT,
-            answer_prompt,
+        answer = call_ollama(
+            model=model,
+            ollama_host=ollama_host,
+            instructions=SYSTEM_PROMPT,
+            user_input=answer_prompt,
             max_output_tokens=220,
             temperature=0.2,
         )
@@ -301,8 +328,8 @@ QUESTION:
 
 
 def process_chunk(
-    client: OpenAI,
     model: str,
+    ollama_host: str,
     chunks: list[Chunk],
     chunk_index: int,
     questions_per_chunk: int,
@@ -310,33 +337,29 @@ def process_chunk(
     oracle_probability: float,
 ) -> list[dict]:
     chunk = chunks[chunk_index]
-    questions = generate_questions(client, model, chunk, questions_per_chunk)
+    questions = generate_questions(
+        model=model,
+        ollama_host=ollama_host,
+        chunk=chunk,
+        count=questions_per_chunk,
+    )
 
-    examples: list[dict] = []
-    for question in questions:
-        examples.append(
-            build_training_example(
-                client=client,
-                model=model,
-                chunks=chunks,
-                oracle_index=chunk_index,
-                question=question,
-                distractor_count=distractors,
-                oracle_probability=oracle_probability,
-            )
+    return [
+        build_training_example(
+            model=model,
+            ollama_host=ollama_host,
+            chunks=chunks,
+            oracle_index=chunk_index,
+            question=question,
+            distractor_count=distractors,
+            oracle_probability=oracle_probability,
         )
-    return examples
+        for question in questions
+    ]
 
 
 def main() -> None:
-    load_dotenv()
     args = parse_args()
-
-    if not os.getenv("OPENAI_API_KEY"):
-        raise RuntimeError(
-            "OPENAI_API_KEY is not set. Store it in Colab Secrets or the environment; "
-            "never put the key directly in this file."
-        )
 
     if not 0.0 <= args.oracle_probability <= 1.0:
         raise ValueError("--oracle-probability must be between 0 and 1.")
@@ -352,23 +375,27 @@ def main() -> None:
         chunk_size=args.chunk_size,
         chunk_overlap=args.chunk_overlap,
     )
+
     if args.max_chunks is not None:
         chunks = chunks[: args.max_chunks]
 
     if not chunks:
         raise RuntimeError("No usable document chunks were found.")
 
-    client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    logger.info("Using local Ollama model: %s", args.model)
+    logger.info("Ollama endpoint: %s", args.ollama_host)
+
     args.output.parent.mkdir(parents=True, exist_ok=True)
 
     total_examples = 0
+
     with args.output.open("w", encoding="utf-8") as handle:
         with ThreadPoolExecutor(max_workers=args.workers) as executor:
             futures = [
                 executor.submit(
                     process_chunk,
-                    client,
                     args.model,
+                    args.ollama_host,
                     chunks,
                     index,
                     args.questions,
@@ -385,9 +412,13 @@ def main() -> None:
                 unit="chunk",
             ):
                 examples = future.result()
+
                 for example in examples:
-                    handle.write(json.dumps(example, ensure_ascii=False) + "\n")
+                    handle.write(
+                        json.dumps(example, ensure_ascii=False) + "\n"
+                    )
                     total_examples += 1
+
                 handle.flush()
 
     logger.info(
