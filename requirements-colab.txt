@@ -1,11 +1,11 @@
-# LAX Colab T4 reproducibility stack
-# Python 3.13 / current 2026 Hugging Face stack
-transformers==5.18.0
-peft==0.21.2
-bitsandbytes==0.50.2
-accelerate==1.15.0
-datasets==5.0.1
-sentence-transformers==6.1.0
-faiss-cpu==1.9.0.post1
-streamlit==1.65.0
+# LAX FINAL COLAB RUNTIME
+# Designed for the Colab Python 3.13 + T4 runtime.
+# PyTorch is supplied by Colab and is intentionally not pinned here.
+transformers>=5.18,<5.19
+peft>=0.21.2,<0.22
+bitsandbytes>=0.50.2,<0.51
+accelerate>=1.15,<2
+sentence-transformers>=6.1,<6.2
+faiss-cpu>=1.13,<1.14
+streamlit>=1.65,<1.66
 sentencepiece
