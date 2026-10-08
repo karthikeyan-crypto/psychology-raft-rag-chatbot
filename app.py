@@ -29,6 +29,14 @@ SOURCE_DIR = APP_DIR / "data" / "sources"
 TOP_K = 3
 MIN_RETRIEVAL_SCORE = DEFAULT_MIN_RETRIEVAL_SCORE
 
+# Lightweight normalization for common short-chat inputs/typos.
+COMMON_CORRECTIONS = {
+    "lonly": "lonely",
+    "lonley": "lonely",
+    "stresed": "stressed",
+    "stressd": "stressed",
+}
+
 SYSTEM_PROMPT = """You are LAX, a student wellbeing psychoeducation assistant.
 
 STRICT GROUNDING RULES:
@@ -58,6 +66,47 @@ HIGH_RISK_TERMS = (
     "self harm",
     "self-harm",
 )
+
+
+def normalize_question(question: str) -> str:
+    words = question.split()
+    return " ".join(COMMON_CORRECTIONS.get(word.lower(), word) for word in words)
+
+
+def conversation_response(question: str) -> str | None:
+    normalized = " ".join(question.lower().split())
+
+    greetings = {
+        "hi",
+        "hello",
+        "hey",
+        "hey lax",
+        "hi lax",
+        "hello lax",
+    }
+
+    if normalized in greetings:
+        return (
+            "Hi! I'm LAX. I can help with student wellbeing topics "
+            "such as academic stress, sleep, routines, coping, and "
+            "when to seek support. What would you like to talk about?"
+        )
+
+    casual = {
+        "how are you",
+        "how are you?",
+        "what's up",
+        "whats up",
+    }
+
+    if normalized in casual:
+        return (
+            "I'm here and ready to help. You can tell me what you're "
+            "dealing with, such as stress, sleep, study pressure, or "
+            "feeling lonely."
+        )
+
+    return None
 
 
 def safety_response(question: str) -> str | None:
@@ -130,6 +179,12 @@ def load_lax():
 
 
 def generate_lax_answer(question: str, tokenizer, model, retriever):
+    question = normalize_question(question)
+
+    casual = conversation_response(question)
+    if casual:
+        return casual, []
+
     emergency = safety_response(question)
     if emergency:
         return emergency, []
