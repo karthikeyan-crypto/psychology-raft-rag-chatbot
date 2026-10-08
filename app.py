@@ -154,6 +154,45 @@ def normalize_common_typos(text: str) -> str:
     )
 
 
+def fuzzy_psychology_correction(text: str) -> str:
+    """Cheap local spelling correction for psychology vocabulary."""
+    from difflib import get_close_matches
+
+    vocabulary = sorted(
+        {
+            term.replace("-", " ")
+            for term in PSYCHOLOGY_TERMS
+            if len(term) >= 4
+        }
+        | {key for key in COMMON_CORRECTIONS if len(key) >= 4}
+    )
+
+    corrected_words = []
+    for word in text.split():
+        clean = word.strip(".,!?;:")
+        if len(clean) < 4:
+            corrected_words.append(word)
+            continue
+
+        exact = COMMON_CORRECTIONS.get(clean.lower())
+        if exact:
+            corrected_words.append(exact)
+            continue
+
+        match = get_close_matches(
+            clean.lower(),
+            vocabulary,
+            n=1,
+            cutoff=0.82,
+        )
+
+        corrected_words.append(
+            match[0] if match else word
+        )
+
+    return " ".join(corrected_words)
+
+
 def contains_high_risk_signal(text: str) -> bool:
     lowered = text.lower()
     return any(term in lowered for term in HIGH_RISK_TERMS)
@@ -250,7 +289,7 @@ def _generate_with_model(
     model,
     tokenizer,
     messages: list[dict],
-    max_new_tokens: int = 96,
+    max_new_tokens: int = 72,
     enable_thinking: bool | None = None,
 ) -> str:
     template_kwargs = {
@@ -326,7 +365,7 @@ def correct_query_with_general_model(
         general_model,
         general_tokenizer,
         messages,
-        max_new_tokens=CORRECTION_MAX_NEW_TOKENS,
+        max_new_tokens=48,
         enable_thinking=False,
     )
 
@@ -433,55 +472,31 @@ def route_question(
     if contains_high_risk_signal(original_question):
         return safety_response(original_question), [], "safety"
 
-    # 2. Fast deterministic typo normalization.
+    # 2. Cheap local typo normalization.
     normalized = normalize_common_typos(original_question)
+    normalized = fuzzy_psychology_correction(normalized)
 
-    # 3. Try grounded psychology with the normalized query first.
-    answer, matches = grounded_psychology_answer(
-        normalized,
-        psych_tokenizer,
-        psych_model,
-        retriever,
-    )
-
-    if answer:
-        return answer, matches, "psychology"
-
-    # 4. If retrieval was weak, use the general open-weight model to
-    # minimally correct spelling/grammar and try psychology retrieval again.
-    general_tokenizer, general_model = get_general_resources()
-
-    corrected = correct_query_with_general_model(
-        normalized,
-        general_tokenizer,
-        general_model,
-    )
-
-    if corrected.strip().lower() != normalized.strip().lower():
-        answer, corrected_matches = grounded_psychology_answer(
-            corrected,
+    # 3. Route to the psychology system only when the query looks psychological.
+    if looks_like_psychology(normalized):
+        answer, matches = grounded_psychology_answer(
+            normalized,
             psych_tokenizer,
             psych_model,
             retriever,
         )
 
         if answer:
-            return answer, corrected_matches, "psychology"
+            return answer, matches, "psychology"
 
-        normalized = corrected
-
-    # 5. If the corrected question clearly looks psychological but the
-    # knowledge base does not support it, abstain rather than letting the
-    # general model invent mental-health guidance.
-    if looks_like_psychology(normalized):
+        # Never hand an unsupported psychology question to the general model.
         return (
             "I don't have enough information in the current knowledge "
             "base to answer that reliably.",
-            [],
+            matches,
             "psychology_abstain",
         )
 
-    # 6. Everything else goes to the general open-weight model.
+    # 4. Everything else goes directly to the general open-weight model.
     general_tokenizer, general_model = get_general_resources()
 
     return (
