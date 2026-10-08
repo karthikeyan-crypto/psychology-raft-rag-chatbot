@@ -37,8 +37,12 @@ ADAPTER_PATH = Path(
 INDEX_DIR = APP_DIR / "data" / "vector_index"
 SOURCE_DIR = APP_DIR / "data" / "sources"
 
-TOP_K = 3
+# Keep retrieval/generation small for fast Colab T4 responses.
+TOP_K = 2
 MIN_RETRIEVAL_SCORE = DEFAULT_MIN_RETRIEVAL_SCORE
+PSYCH_MAX_NEW_TOKENS = 96
+GENERAL_MAX_NEW_TOKENS = 96
+CORRECTION_MAX_NEW_TOKENS = 48
 
 PSYCHOLOGY_TERMS = (
     "stress",
@@ -213,7 +217,7 @@ def load_lax_resources():
         quantization_config=_build_4bit_config(),
         device_map="auto",
     )
-    base_model.config.use_cache = False
+    base_model.config.use_cache = True
 
     psych_model = PeftModel.from_pretrained(
         base_model,
@@ -246,7 +250,7 @@ def _generate_with_model(
     model,
     tokenizer,
     messages: list[dict],
-    max_new_tokens: int = 160,
+    max_new_tokens: int = 96,
     enable_thinking: bool | None = None,
 ) -> str:
     template_kwargs = {
@@ -283,7 +287,7 @@ def _generate_with_model(
         "eos_token_id": tokenizer.eos_token_id,
     }
 
-    with torch.no_grad():
+    with torch.inference_mode():
         outputs = model.generate(**generation_kwargs)
 
     generated = outputs[
@@ -322,7 +326,7 @@ def correct_query_with_general_model(
         general_model,
         general_tokenizer,
         messages,
-        max_new_tokens=80,
+        max_new_tokens=CORRECTION_MAX_NEW_TOKENS,
         enable_thinking=False,
     )
 
@@ -410,7 +414,7 @@ def grounded_psychology_answer(
         psych_model,
         psych_tokenizer,
         messages,
-        max_new_tokens=180,
+        max_new_tokens=PSYCH_MAX_NEW_TOKENS,
         enable_thinking=False,
     )
 
@@ -445,6 +449,8 @@ def route_question(
 
     # 4. If retrieval was weak, use the general open-weight model to
     # minimally correct spelling/grammar and try psychology retrieval again.
+    general_tokenizer, general_model = get_general_resources()
+
     corrected = correct_query_with_general_model(
         normalized,
         general_tokenizer,
@@ -476,6 +482,8 @@ def route_question(
         )
 
     # 6. Everything else goes to the general open-weight model.
+    general_tokenizer, general_model = get_general_resources()
+
     return (
         general_answer(
             normalized,
@@ -515,10 +523,18 @@ with st.expander("About LAX"):
 
 try:
     psych_tokenizer, psych_model, retriever = load_lax_resources()
-    general_tokenizer, general_model = load_general_resources()
 except Exception as exc:
     st.error(f"LAX could not start: {exc}")
     st.stop()
+
+general_tokenizer = None
+general_model = None
+
+def get_general_resources():
+    global general_tokenizer, general_model
+    if general_tokenizer is None or general_model is None:
+        general_tokenizer, general_model = load_general_resources()
+    return general_tokenizer, general_model
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
