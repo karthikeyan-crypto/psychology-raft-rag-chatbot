@@ -1,0 +1,3 @@
+# Optional: only for QLoRA training/retraining.
+# The final LAX app does not need these packages.
+datasets>=5,<6
