@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 import faiss
@@ -79,7 +80,13 @@ class LocalRetriever:
         ) as handle:
             self.documents = json.load(handle)
 
-        self.embedder = SentenceTransformer(model_name)
+        requested_device = os.getenv("LAX_EMBED_DEVICE")
+        if requested_device:
+            device = requested_device
+        else:
+            device = "cuda" if __import__("torch").cuda.is_available() else "cpu"
+
+        self.embedder = SentenceTransformer(model_name, device=device)
 
     def search(
         self,
