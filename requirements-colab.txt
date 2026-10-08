@@ -1,10 +1,11 @@
-# Tested in the LAX Colab T4 runtime on 2026-10-08
+# LAX Colab T4 reproducibility stack
+# Python 3.13 / current 2026 Hugging Face stack
 transformers==5.18.0
 peft==0.21.2
 bitsandbytes==0.50.2
-accelerate==1.0.1
-datasets==3.0.1
-sentence-transformers==3.1.1
+accelerate==1.15.0
+datasets==5.0.1
+sentence-transformers==6.1.0
 faiss-cpu==1.9.0.post1
 streamlit==1.65.0
 sentencepiece
