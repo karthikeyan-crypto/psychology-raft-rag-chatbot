@@ -72,3 +72,14 @@ Before redistributing substantial portions of upstream code or data, check the u
 ## Status
 
 Work in progress. The project is being migrated toward a local Qwen + QLoRA + RAFT + BGE + FAISS architecture focused on student well-being.
+
+## Run LAX in CPU-only Google Colab
+
+If your Colab GPU quota is exhausted, open the CPU-only launcher notebook:
+
+**[Open LAX CPU-only Colab notebook](https://colab.research.google.com/github/karthikeyan-crypto/psychology-raft-rag-chatbot/blob/main/cloud/01_run_lax_app_colab_cpu.ipynb)**
+
+It clones this repository, installs `requirements-colab-cpu.txt` without replacing Colab's PyTorch build, checks/mounts the saved `psychology-qwen-qlora-v2` adapter from Drive (with ZIP-upload fallback), builds the local FAISS index if needed, starts Streamlit, displays logs, and opens a temporary Cloudflare Tunnel URL.
+
+CPU mode loads the fine-tuned Qwen2.5 model in full precision and disables the separate Qwen3 general-chat model by default to reduce RAM use. This can be slow and requires several GB of RAM. It does not retrain or overwrite the adapter. Run the notebook cells from top to bottom and keep the tunnel cell running while using the temporary URL.
+
