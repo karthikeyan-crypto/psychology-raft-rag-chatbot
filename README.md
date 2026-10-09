@@ -21,7 +21,9 @@ The core rule is simple:
 
 ## Local-first architecture
 
-Student question -> safety check -> local BGE-small embeddings -> local FAISS search -> top psychology sources -> local Qwen2.5-1.5B-Instruct via Ollama -> grounded answer.
+Student question -> safety check -> local BGE-small embeddings -> local FAISS search -> expanded retry if needed -> topic-matched trusted source fallback if available -> local Qwen2.5-1.5B-Instruct + LoRA -> grounded answer or explicit abstention.
+
+If retrieval misses a topic that is already documented, LAX retries with related search terms and can pass the matching existing source file directly to the model. If no relevant source exists, LAX must say that the knowledge base does not contain enough information; it must not use the model's pretrained knowledge to invent a mental-health answer. This improves retrieval resilience but does not guarantee that every generated claim is correct, so the regression checks in `eval/RAG_GROUNDING_TESTS.md` should be run after changes.
 
 ## Technology stack
 
