@@ -4,6 +4,8 @@ import json
 import os
 import re
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 import streamlit as st
 import torch
@@ -20,16 +22,23 @@ from inference.rag_local import (
 
 APP_DIR = Path(__file__).resolve().parent
 
-# CPU fast mode uses a smaller instruction model to reduce waiting time when
-# Colab's GPU quota is exhausted. The curated RAG sources and safety routing
-# remain enabled, but the saved LoRA adapter is used only in normal mode.
+# CPU-only Colab can use a local Ollama model. It has no metered per-request
+# API quota, but remains bounded by the runtime's CPU, RAM, disk and session.
 PSYCH_MODEL_ID = "Qwen/Qwen2.5-1.5B-Instruct"
 CPU_FAST_MODEL_ID = "Qwen/Qwen2.5-0.5B-Instruct"
+OLLAMA_CPU_MODE = (
+    not torch.cuda.is_available()
+    and os.getenv("LAX_USE_OLLAMA", "0").strip().lower()
+    in {"1", "true", "yes", "on"}
+)
 CPU_FAST_MODE = (
     not torch.cuda.is_available()
+    and not OLLAMA_CPU_MODE
     and os.getenv("LAX_CPU_FAST_MODE", "1").strip().lower()
     not in {"0", "false", "no", "off"}
 )
+OLLAMA_BASE_URL = os.getenv("LAX_OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
+OLLAMA_MODEL = os.getenv("LAX_OLLAMA_MODEL", "qwen2.5:1.5b")
 
 # Avoid CPU oversubscription on small Colab runtimes.
 if not torch.cuda.is_available():
@@ -55,10 +64,10 @@ ADAPTER_PATH = Path(
 INDEX_DIR = APP_DIR / "data" / "vector_index"
 SOURCE_DIR = APP_DIR / "data" / "sources"
 
-# Smaller retrieval context and shorter replies in CPU fast mode reduce latency.
-TOP_K = 2 if CPU_FAST_MODE else (3 if not torch.cuda.is_available() else 4)
+# Smaller retrieval context and shorter replies reduce CPU inference latency.
+TOP_K = 2 if (CPU_FAST_MODE or OLLAMA_CPU_MODE) else (3 if not torch.cuda.is_available() else 4)
 MIN_RETRIEVAL_SCORE = DEFAULT_MIN_RETRIEVAL_SCORE
-PSYCH_MAX_NEW_TOKENS = 64 if CPU_FAST_MODE else (120 if not torch.cuda.is_available() else 160)
+PSYCH_MAX_NEW_TOKENS = 96 if OLLAMA_CPU_MODE else (64 if CPU_FAST_MODE else (120 if not torch.cuda.is_available() else 160))
 GENERAL_MAX_NEW_TOKENS = 96
 CORRECTION_MAX_NEW_TOKENS = 48
 
@@ -484,14 +493,71 @@ def _model_loading_kwargs() -> dict:
     }
 
 
+def _ensure_ollama_ready() -> None:
+    """Check that the local Ollama API and configured model are available."""
+    request = Request(f"{OLLAMA_BASE_URL}/api/tags", method="GET")
+    try:
+        with urlopen(request, timeout=8) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, OSError, ValueError) as exc:
+        raise RuntimeError(
+            f"Ollama is enabled but is not reachable at {OLLAMA_BASE_URL}. "
+            "Run the Ollama setup cell and make sure the local server is running."
+        ) from exc
+
+    installed_models = {item.get("name", "") for item in payload.get("models", [])}
+    if OLLAMA_MODEL not in installed_models:
+        raise RuntimeError(
+            f"Ollama model '{OLLAMA_MODEL}' is not installed. "
+            f"Run: ollama pull {OLLAMA_MODEL}"
+        )
+
+
+def _ollama_chat(messages: list[dict], max_new_tokens: int = 96) -> str:
+    """Generate through local Ollama; this does not call a hosted LLM API."""
+    body = {
+        "model": OLLAMA_MODEL,
+        "messages": messages,
+        "stream": False,
+        "keep_alive": "10m",
+        "options": {
+            "temperature": 0.1,
+            "num_predict": max_new_tokens,
+            "num_ctx": 4096,
+        },
+    }
+    request = Request(
+        f"{OLLAMA_BASE_URL}/api/chat",
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=300) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, OSError, ValueError) as exc:
+        raise RuntimeError(
+            f"Ollama generation failed using '{OLLAMA_MODEL}'. "
+            "Check /content/ollama.log and confirm the local model is available."
+        ) from exc
+
+    answer = payload.get("message", {}).get("content", "").strip()
+    if not answer:
+        raise RuntimeError("Ollama returned an empty response.")
+    return answer
+
+
 @st.cache_resource(show_spinner="Loading LAX psychology model and knowledge base...")
 def load_lax_resources():
-    if not CPU_FAST_MODE and not ADAPTER_PATH.exists():
+    if OLLAMA_CPU_MODE:
+        _ensure_ollama_ready()
+
+    if not (CPU_FAST_MODE or OLLAMA_CPU_MODE) and not ADAPTER_PATH.exists():
         raise FileNotFoundError(
             f"LoRA adapter not found at: {ADAPTER_PATH}"
         )
 
-    if not CPU_FAST_MODE:
+    if not (CPU_FAST_MODE or OLLAMA_CPU_MODE):
         adapter_file = ADAPTER_PATH / "adapter_model.safetensors"
         if not adapter_file.exists():
             raise FileNotFoundError(
@@ -503,6 +569,10 @@ def load_lax_resources():
         build_index(SOURCE_DIR, INDEX_DIR)
 
     retriever = LocalRetriever(INDEX_DIR)
+
+    if OLLAMA_CPU_MODE:
+        # Do not load another Transformers model; Ollama handles quantized inference.
+        return None, None, retriever
 
     active_model_id = CPU_FAST_MODEL_ID if CPU_FAST_MODE else PSYCH_MODEL_ID
     tokenizer = AutoTokenizer.from_pretrained(active_model_id)
@@ -753,13 +823,16 @@ def grounded_psychology_answer(
         },
     ]
 
-    answer = _generate_with_model(
-        psych_model,
-        psych_tokenizer,
-        messages,
-        max_new_tokens=PSYCH_MAX_NEW_TOKENS,
-        enable_thinking=False,
-    )
+    if OLLAMA_CPU_MODE:
+        answer = _ollama_chat(messages, max_new_tokens=PSYCH_MAX_NEW_TOKENS)
+    else:
+        answer = _generate_with_model(
+            psych_model,
+            psych_tokenizer,
+            messages,
+            max_new_tokens=PSYCH_MAX_NEW_TOKENS,
+            enable_thinking=False,
+        )
 
     return answer, strong_matches
 
@@ -856,7 +929,18 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 
 st.title("LAX")
-if CPU_FAST_MODE:
+if OLLAMA_CPU_MODE:
+    st.caption("Your student wellbeing companion · Local Ollama CPU mode")
+    st.info(
+        f"LAX uses the local Ollama model {OLLAMA_MODEL}. It does not use a "
+        "hosted model API or consume a per-request hosted API quota. Source "
+        "retrieval and high-risk safety routing remain enabled."
+    )
+    st.markdown(
+        "LAX uses curated wellbeing guidance with a locally run Ollama model. "
+        "General conversation uses lightweight fallback replies in this CPU setup."
+    )
+elif CPU_FAST_MODE:
     st.caption("Your student wellbeing companion · Fast CPU mode")
     st.info(
         "CPU fast mode is active: LAX uses a smaller Qwen2.5-0.5B model without "
