@@ -521,15 +521,15 @@ def load_lax_resources():
 
 @st.cache_resource(show_spinner="Loading general conversation model...")
 def load_general_resources():
+    # Check CPU fallback before downloading even the general-model tokenizer.
+    # Greetings/general chat use the local lightweight fallback in CPU mode.
+    if not torch.cuda.is_available() and os.getenv("LAX_LOAD_GENERAL_ON_CPU", "0") != "1":
+        return None, None
+
     tokenizer = AutoTokenizer.from_pretrained(GENERAL_MODEL_ID)
 
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-
-    # Loading a second full-size language model can exhaust Colab CPU RAM.
-    # Keep general-chat fallback lightweight on CPU unless explicitly enabled.
-    if not torch.cuda.is_available() and os.getenv("LAX_LOAD_GENERAL_ON_CPU", "0") != "1":
-        return None, None
 
     model = AutoModelForCausalLM.from_pretrained(
         GENERAL_MODEL_ID,
@@ -844,9 +844,8 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 
 st.title("LAX")
-st.caption("Your student wellbeing companion")
-
 if CPU_FAST_MODE:
+    st.caption("Your student wellbeing companion · Fast CPU mode")
     st.info(
         "CPU fast mode is active: LAX uses a smaller Qwen2.5-0.5B model without "
         "the saved LoRA adapter to reduce waiting time. Curated-source retrieval "
@@ -862,9 +861,11 @@ st.markdown(
 with st.expander("About LAX"):
     st.write(
         "LAX provides student wellbeing psychoeducation from a curated "
-        "knowledge base. General conversation is handled by a locally "
-        "hosted open-weight model. LAX is not a psychologist, therapist, "
-        "doctor, or diagnostic tool."
+        "knowledge base. On a working GPU runtime, it uses the saved "
+        "Qwen2.5-1.5B LoRA adapter. In CPU fast mode, it uses a smaller "
+        "Qwen2.5-0.5B base model without that adapter to reduce latency. "
+        "CPU-mode general conversation uses lightweight fallback replies. "
+        "LAX is not a psychologist, therapist, doctor, or diagnostic tool."
     )
 
 try:
