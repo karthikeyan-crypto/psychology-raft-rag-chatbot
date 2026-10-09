@@ -367,7 +367,7 @@ def _topic_source_for_question(question: str) -> str | None:
     if any(term in lowered for term in (
         "coping", "calm down", "relaxation", "relax", "mindfulness",
         "journal", "emotional regulation", "manage my emotions",
-        "handle my emotions", "exercise to feel better",
+        "handle my emotions", "exercise to feel better", "anger", "angry",
     )):
         return "03_social_connection_and_coping.md"
 
@@ -393,7 +393,7 @@ def _retrieval_expansion_for_question(question: str) -> str:
         )
     if any(term in lowered for term in ("counsellor", "counselor", "professional help", "seek help", "therapy", "depressed", "depression")):
         return " professional support mental health daily life trusted person counsellor"
-    if any(term in lowered for term in ("coping", "calm down", "relaxation", "mindfulness", "emotions")):
+    if any(term in lowered for term in ("coping", "calm down", "relaxation", "mindfulness", "emotions", "anger", "angry")):
         return " coping skills emotional regulation relaxation mindfulness social support"
     return ""
 
