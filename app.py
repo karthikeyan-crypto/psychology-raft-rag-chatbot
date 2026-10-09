@@ -92,6 +92,9 @@ PSYCHOLOGY_TERMS = (
     "worried",
     "overthinking",
     "overthink",
+    "frustrated",
+    "frustration",
+    "frustrating",
     "anger",
     "angry",
     "emotion",
@@ -159,6 +162,14 @@ COMMON_CORRECTIONS = {
     "lonliess": "loneliness",
     "stresed": "stressed",
     "stressd": "stressed",
+    "streesed": "stressed",
+    "stressted": "stressed",
+    "frustated": "frustrated",
+    "frustrtaed": "frustrated",
+    "frustation": "frustration",
+    "fucus": "focus",
+    "foucs": "focus",
+    "focous": "focus",
     "anxius": "anxious",
     "anxeity": "anxiety",
     "sleap": "sleep",
@@ -386,6 +397,7 @@ def _topic_source_for_question(question: str) -> str | None:
         "coping", "calm down", "relaxation", "relax", "mindfulness",
         "journal", "emotional regulation", "manage my emotions",
         "handle my emotions", "exercise to feel better", "anger", "angry",
+        "frustrated", "frustration", "frustrating",
     )):
         return "03_social_connection_and_coping.md"
 
@@ -411,8 +423,8 @@ def _retrieval_expansion_for_question(question: str) -> str:
         )
     if any(term in lowered for term in ("counsellor", "counselor", "professional help", "seek help", "therapy", "depressed", "depression")):
         return " professional support mental health daily life trusted person counsellor"
-    if any(term in lowered for term in ("coping", "calm down", "relaxation", "mindfulness", "emotions", "anger", "angry")):
-        return " coping skills emotional regulation relaxation mindfulness social support"
+    if any(term in lowered for term in ("coping", "calm down", "relaxation", "mindfulness", "emotions", "anger", "angry", "frustrated", "frustration", "frustrating")):
+        return " coping skills emotional regulation relaxation mindfulness social support frustration manage emotions"
     return ""
 
 
