@@ -64,6 +64,8 @@ PSYCHOLOGY_TERMS = (
     "wellbeing",
     "well-being",
     "mental health",
+    "helpline",
+    "tele-manas",
     "overwhelmed",
     "burnout",
     "exam",
