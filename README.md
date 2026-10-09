@@ -82,7 +82,7 @@ If your Colab GPU quota is exhausted, open the CPU-only launcher notebook:
 
 **[Open LAX CPU-only Colab notebook](https://colab.research.google.com/github/karthikeyan-crypto/psychology-raft-rag-chatbot/blob/main/cloud/01_run_lax_app_colab_cpu.ipynb)**
 
-It clones this repository, installs `requirements-colab-cpu.txt` without replacing Colab's PyTorch build, checks/mounts the saved `psychology-qwen-qlora-v2` adapter from Drive (with ZIP-upload fallback), builds the local FAISS index if needed, starts Streamlit, displays logs, and opens a temporary Cloudflare Tunnel URL.
+It clones this repository, installs `requirements-colab-cpu.txt` without replacing Colab's PyTorch build, builds the local FAISS index if needed, starts Streamlit, displays logs, and opens a temporary Cloudflare Tunnel URL. The default CPU fast mode does not require Google Drive or the saved LoRA adapter.
 
 The CPU launcher now defaults to **CPU fast mode** using `Qwen/Qwen2.5-0.5B-Instruct` without the saved 1.5B LoRA adapter. The curated RAG knowledge base, source retrieval, and high-risk safety routing remain active; generation quality may be less consistent than the fine-tuned 1.5B model. This mode reduces CPU inference time and RAM use. The first run still downloads and loads the small model. The GPU launcher continues to use the saved Qwen2.5-1.5B LoRA adapter on a working CUDA runtime. Run notebook cells from top to bottom and keep the tunnel cell running while using the temporary URL.
 
