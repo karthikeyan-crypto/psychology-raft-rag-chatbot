@@ -111,11 +111,24 @@ PSYCHOLOGY_TERMS = (
 
 HIGH_RISK_TERMS = (
     "suicide",
+    "suicidal",
     "kill myself",
+    "kill me",
+    "take my life",
     "end my life",
+    "end it all",
     "want to die",
+    "don't want to live",
+    "do not want to live",
+    "not worth living",
+    "hurt myself",
+    "harm myself",
     "self harm",
     "self-harm",
+    "self injury",
+    "self-injury",
+    "can't go on",
+    "cant go on",
 )
 
 COMMON_CORRECTIONS = {
