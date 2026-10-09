@@ -71,6 +71,18 @@ PSYCH_MAX_NEW_TOKENS = 96 if OLLAMA_CPU_MODE else (64 if CPU_FAST_MODE else (120
 GENERAL_MAX_NEW_TOKENS = 96
 CORRECTION_MAX_NEW_TOKENS = 48
 
+print(
+    "LAX inference mode: "
+    + (
+        "local Ollama CPU mode"
+        if OLLAMA_CPU_MODE
+        else "fast CPU Transformers mode"
+        if CPU_FAST_MODE
+        else "Transformers + saved LoRA adapter"
+    ),
+    flush=True,
+)
+
 PSYCHOLOGY_TERMS = (
     "stress",
     "stressed",
