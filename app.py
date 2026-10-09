@@ -40,7 +40,7 @@ SOURCE_DIR = APP_DIR / "data" / "sources"
 # Keep retrieval/generation small for fast Colab T4 responses.
 TOP_K = 2
 MIN_RETRIEVAL_SCORE = DEFAULT_MIN_RETRIEVAL_SCORE
-PSYCH_MAX_NEW_TOKENS = 96
+PSYCH_MAX_NEW_TOKENS = 64 if not torch.cuda.is_available() else 96
 GENERAL_MAX_NEW_TOKENS = 96
 CORRECTION_MAX_NEW_TOKENS = 48
 
@@ -216,6 +216,7 @@ def looks_like_psychology(text: str) -> bool:
 
 
 def _build_4bit_config() -> BitsAndBytesConfig:
+    """Return the existing 4-bit quantization config for CUDA runtimes only."""
     compute_dtype = (
         torch.bfloat16
         if torch.cuda.is_available() and torch.cuda.is_bf16_supported()
@@ -227,6 +228,23 @@ def _build_4bit_config() -> BitsAndBytesConfig:
         bnb_4bit_compute_dtype=compute_dtype,
         bnb_4bit_use_double_quant=True,
     )
+
+
+def _model_loading_kwargs() -> dict:
+    """Choose a CUDA 4-bit load or a conservative CPU full-precision load."""
+    if torch.cuda.is_available():
+        return {
+            "quantization_config": _build_4bit_config(),
+            "device_map": "auto",
+        }
+
+    # bitsandbytes 4-bit quantization is intentionally not used in CPU mode.
+    # low_cpu_mem_usage avoids an unnecessary duplicate copy while loading.
+    return {
+        "torch_dtype": torch.float32,
+        "device_map": {"": "cpu"},
+        "low_cpu_mem_usage": True,
+    }
 
 
 @st.cache_resource(show_spinner="Loading LAX psychology model and knowledge base...")
@@ -253,8 +271,7 @@ def load_lax_resources():
 
     base_model = AutoModelForCausalLM.from_pretrained(
         PSYCH_MODEL_ID,
-        quantization_config=_build_4bit_config(),
-        device_map="auto",
+        **_model_loading_kwargs(),
     )
     base_model.config.use_cache = True
 
@@ -275,10 +292,14 @@ def load_general_resources():
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    # Loading a second full-size language model can exhaust Colab CPU RAM.
+    # Keep general-chat fallback lightweight on CPU unless explicitly enabled.
+    if not torch.cuda.is_available() and os.getenv("LAX_LOAD_GENERAL_ON_CPU", "0") != "1":
+        return None, None
+
     model = AutoModelForCausalLM.from_pretrained(
         GENERAL_MODEL_ID,
-        quantization_config=_build_4bit_config(),
-        device_map="auto",
+        **_model_loading_kwargs(),
     )
     model.eval()
 
@@ -498,6 +519,28 @@ def route_question(
 
     # 4. Everything else goes directly to the general open-weight model.
     general_tokenizer, general_model = get_general_resources()
+
+    if general_model is None:
+        # Lightweight conversational fallback keeps CPU-only Colab memory
+        # available for the fine-tuned psychology model.
+        lowered = normalized.strip().lower().strip(" .!?")
+        if lowered in {"hi", "hello", "hey", "hiya", "good morning", "good afternoon", "good evening"}:
+            answer = "Hi! I'm LAX, your student wellbeing companion. What would you like to talk about?"
+        elif lowered in {"how are you", "how are you doing", "how's it going", "how is it going"}:
+            answer = "I'm here and ready to help. How are you feeling today?"
+        elif lowered in {"thanks", "thank you", "thanks lax", "thank you lax"}:
+            answer = "You're welcome. I'm glad you reached out."
+        elif lowered in {"bye", "goodbye", "see you"}:
+            answer = "Take care. You can come back whenever you need to talk."
+        elif "help" in lowered:
+            answer = "I can help with student wellbeing topics such as academic stress, sleep routines, coping, loneliness, and when to seek support."
+        else:
+            answer = (
+                "I'm running in CPU-only mode to keep memory available for LAX's "
+                "grounded student-wellbeing model. Please ask me about academic "
+                "stress, sleep, coping, loneliness, or finding support."
+            )
+        return answer, [], "general_cpu_fallback"
 
     return (
         general_answer(
