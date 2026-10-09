@@ -14,6 +14,7 @@ from inference.rag_local import (
     DEFAULT_MIN_RETRIEVAL_SCORE,
     LocalRetriever,
     build_index,
+    load_documents,
 )
 
 
@@ -212,7 +213,63 @@ def safety_response(question: str) -> str:
 
 def looks_like_psychology(text: str) -> bool:
     lowered = text.lower()
-    return any(term in lowered for term in PSYCHOLOGY_TERMS)
+    extra_student_support_terms = (
+        "alone",
+        "isolated",
+        "isolation",
+        "left out",
+        "disconnected",
+        "no friends",
+        "nobody talks to me",
+        "nobody understands me",
+    )
+    return any(
+        term in lowered
+        for term in (*PSYCHOLOGY_TERMS, *extra_student_support_terms)
+    )
+
+
+def looks_like_loneliness(text: str) -> bool:
+    lowered = text.lower()
+    loneliness_terms = (
+        "lonely",
+        "loneliness",
+        "feel alone",
+        "feeling alone",
+        "i am alone",
+        "i'm alone",
+        "isolated",
+        "left out",
+        "disconnected",
+        "no friends",
+        "nobody talks to me",
+        "nobody understands me",
+    )
+    return any(term in lowered for term in loneliness_terms)
+
+
+def _index_is_current() -> bool:
+    """Detect new or edited Markdown/text source files and rebuild stale FAISS indexes."""
+    index_file = INDEX_DIR / "student_wellbeing.faiss"
+    metadata_file = INDEX_DIR / "metadata.json"
+    if not index_file.is_file() or not metadata_file.is_file():
+        return False
+
+    try:
+        with metadata_file.open("r", encoding="utf-8") as handle:
+            indexed_docs = json.load(handle)
+        indexed_by_name = {
+            Path(item.get("source", "")).name: item.get("text", "")
+            for item in indexed_docs
+        }
+        current_docs = load_documents(SOURCE_DIR)
+        current_by_name = {
+            Path(item["source"]).name: item["text"]
+            for item in current_docs
+        }
+        return current_by_name == indexed_by_name
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
 
 
 def _build_4bit_config() -> BitsAndBytesConfig:
@@ -260,7 +317,8 @@ def load_lax_resources():
             f"LoRA weights not found at: {adapter_file}"
         )
 
-    if not INDEX_DIR.exists():
+    if not _index_is_current():
+        st.info("Updating the wellbeing knowledge index...")
         build_index(SOURCE_DIR, INDEX_DIR)
 
     retriever = LocalRetriever(INDEX_DIR)
@@ -432,16 +490,43 @@ def grounded_psychology_answer(
     psych_model,
     retriever,
 ):
+    # Expand loneliness-related queries so short messages like "I am lonely"
+    # can retrieve the dedicated source using its related wording.
+    query_for_retrieval = question
+    loneliness_query = looks_like_loneliness(question)
+    if loneliness_query:
+        query_for_retrieval = (
+            question
+            + " loneliness feeling lonely feeling alone social isolation "
+            + "left out disconnected social connection emotional support "
+            + "trusted friend family classmate teacher counsellor"
+        )
+
     matches = retriever.search(
-        question,
+        query_for_retrieval,
         top_k=TOP_K,
+        min_score=0.48 if loneliness_query else MIN_RETRIEVAL_SCORE,
     )
 
+    effective_threshold = 0.48 if loneliness_query else MIN_RETRIEVAL_SCORE
     strong_matches = [
         item
         for item in matches
-        if float(item["score"]) >= MIN_RETRIEVAL_SCORE
+        if float(item["score"]) >= effective_threshold
     ]
+
+    # Exact-topic fallback: if retrieval still rejects a short loneliness
+    # message, use the curated loneliness source instead of giving a dead-end
+    # "not enough information" response. No unsupported general-model answer
+    # is used; Qwen still answers using this source as its only context.
+    if not strong_matches and loneliness_query:
+        loneliness_source = SOURCE_DIR / "06_loneliness_and_social_connection.md"
+        if loneliness_source.is_file():
+            strong_matches = [{
+                "source": str(loneliness_source),
+                "text": loneliness_source.read_text(encoding="utf-8"),
+                "score": None,
+            }]
 
     if not strong_matches:
         return None, matches
@@ -639,9 +724,11 @@ if send and question.strip():
             with st.expander("Sources used"):
                 for item in matches:
                     source_name = Path(item["source"]).name
-                    st.write(
-                        f"{source_name} — similarity {item['score']:.3f}"
-                    )
+                    score = item.get("score")
+                    if score is None:
+                        st.write(f"{source_name} — selected topic-specific knowledge")
+                    else:
+                        st.write(f"{source_name} — similarity {float(score):.3f}")
 
 st.divider()
 st.caption(
