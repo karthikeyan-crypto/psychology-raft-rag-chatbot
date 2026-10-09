@@ -84,5 +84,5 @@ If your Colab GPU quota is exhausted, open the CPU-only launcher notebook:
 
 It clones this repository, installs `requirements-colab-cpu.txt` without replacing Colab's PyTorch build, checks/mounts the saved `psychology-qwen-qlora-v2` adapter from Drive (with ZIP-upload fallback), builds the local FAISS index if needed, starts Streamlit, displays logs, and opens a temporary Cloudflare Tunnel URL.
 
-CPU mode loads the fine-tuned Qwen2.5 model in full precision and disables the separate Qwen3 general-chat model by default to reduce RAM use. This can be slow and requires several GB of RAM. It does not retrain or overwrite the adapter. Run the notebook cells from top to bottom and keep the tunnel cell running while using the temporary URL.
+The CPU launcher now defaults to **CPU fast mode** using `Qwen/Qwen2.5-0.5B-Instruct` without the saved 1.5B LoRA adapter. The curated RAG knowledge base, source retrieval, and high-risk safety routing remain active; generation quality may be less consistent than the fine-tuned 1.5B model. This mode reduces CPU inference time and RAM use. The first run still downloads and loads the small model. The GPU launcher continues to use the saved Qwen2.5-1.5B LoRA adapter on a working CUDA runtime. Run notebook cells from top to bottom and keep the tunnel cell running while using the temporary URL.
 
