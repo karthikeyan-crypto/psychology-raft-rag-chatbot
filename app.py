@@ -852,11 +852,16 @@ if CPU_FAST_MODE:
         "and high-risk safety routing remain enabled. Responses may be less "
         "consistent than the fine-tuned 1.5B model."
     )
-
-st.markdown(
-    "Talk naturally. LAX uses grounded wellbeing guidance for psychology "
-    "topics and a local open-weight assistant for general conversation."
-)
+    st.markdown(
+        "LAX uses curated wellbeing guidance and a smaller local model for CPU "
+        "responses. General conversation uses lightweight fallback replies."
+    )
+else:
+    st.caption("Your student wellbeing companion")
+    st.markdown(
+        "Talk naturally. LAX uses grounded wellbeing guidance for psychology "
+        "topics and a local open-weight assistant for general conversation."
+    )
 
 with st.expander("About LAX"):
     st.write(
