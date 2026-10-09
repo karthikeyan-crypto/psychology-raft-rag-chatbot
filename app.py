@@ -474,7 +474,7 @@ def _model_loading_kwargs() -> dict:
 
 @st.cache_resource(show_spinner="Loading LAX psychology model and knowledge base...")
 def load_lax_resources():
-    if not ADAPTER_PATH.exists():
+    if not CPU_FAST_MODE and not ADAPTER_PATH.exists():
         raise FileNotFoundError(
             f"LoRA adapter not found at: {ADAPTER_PATH}"
         )
