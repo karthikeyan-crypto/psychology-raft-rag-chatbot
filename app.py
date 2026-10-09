@@ -72,6 +72,10 @@ PSYCHOLOGY_TERMS = (
     "panic",
     "worry",
     "worried",
+    "overthinking",
+    "overthink",
+    "anger",
+    "angry",
     "emotion",
     "emotional",
     "self-esteem",
@@ -346,7 +350,7 @@ def _topic_source_for_question(question: str) -> str | None:
         "counsellor", "counselor", "counselling", "counseling",
         "professional help", "seek help", "therapy", "therapist",
         "psychologist", "mental health professional", "depressed",
-        "depression", "persistent sadness",
+        "depression", "sad", "sadness", "persistent sadness",
     )):
         return "04_when_to_seek_help.md"
 
@@ -356,7 +360,7 @@ def _topic_source_for_question(question: str) -> str | None:
     if any(term in lowered for term in (
         "exam", "academic pressure", "study pressure", "stressed",
         "stress", "anxiety", "anxious", "worry", "worried",
-        "overwhelmed", "burnout", "panic",
+        "overthinking", "overthink", "overwhelmed", "burnout", "panic",
     )):
         return "01_academic_stress.md"
 
@@ -380,7 +384,7 @@ def _retrieval_expansion_for_question(question: str) -> str:
         )
     if any(term in lowered for term in ("sleep", "insomnia", "can't sleep", "cannot sleep")):
         return " sleep routine sleep schedule sleep environment devices caffeine rest"
-    if any(term in lowered for term in ("exam", "stress", "stressed", "academic pressure", "worry", "anxious")):
+    if any(term in lowered for term in ("exam", "stress", "stressed", "academic pressure", "worry", "anxious", "overthinking", "overthink")):
         return " academic stress exam pressure coping relaxation mindfulness journal exercise routine"
     if looks_like_relationship_or_focus(lowered):
         return (
