@@ -1,0 +1,11 @@
+# CPU-only Google Colab runtime dependencies for LAX.
+# Intentionally excludes torch and bitsandbytes: preserve Colab's installed CPU PyTorch.
+transformers>=5.18,<6
+peft>=0.21,<1
+accelerate>=1,<2
+sentence-transformers>=6,<7
+faiss-cpu>=1.9,<2
+streamlit>=1.65,<2
+sentencepiece
+safetensors
+jedi
