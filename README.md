@@ -31,7 +31,8 @@ If retrieval misses a topic that is already documented, LAX retries with related
 |---|---|
 | Fine-tuning environment | Google Colab T4 |
 | Base language model | Qwen/Qwen2.5-1.5B-Instruct |
-| Live local model | qwen2.5:1.5b-instruct through Ollama |
+| Streamlit app model | Qwen2.5-1.5B-Instruct + saved LoRA adapter through Transformers/PEFT |
+| Optional CLI demo model | qwen2.5:1.5b-instruct through Ollama |
 | Fine-tuning | QLoRA + PEFT |
 | Embeddings | BAAI/bge-small-en-v1.5 |
 | Local vector database | FAISS |
@@ -58,7 +59,7 @@ Do not add random internet advice, Reddit posts, or unverified mental-health cla
 5. Start the local demo:
    python inference/local_demo.py
 
-The live chat does not send the student's question to a cloud LLM.
+The Streamlit app loads the saved QLoRA adapter with Transformers/PEFT and runs generation in the selected local/Colab runtime. The optional command-line demo uses Ollama. The live chat does not send the student's question to a paid cloud LLM API.
 
 ## Safety and scope
 
