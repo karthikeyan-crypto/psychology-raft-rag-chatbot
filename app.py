@@ -41,7 +41,8 @@ SOURCE_DIR = APP_DIR / "data" / "sources"
 # Keep retrieval/generation small for fast Colab T4 responses.
 TOP_K = 2
 MIN_RETRIEVAL_SCORE = DEFAULT_MIN_RETRIEVAL_SCORE
-PSYCH_MAX_NEW_TOKENS = 64 if not torch.cuda.is_available() else 96
+# CPU generation needs a little more room to avoid cutting replies mid-sentence.
+PSYCH_MAX_NEW_TOKENS = 120 if not torch.cuda.is_available() else 160
 GENERAL_MAX_NEW_TOKENS = 96
 CORRECTION_MAX_NEW_TOKENS = 48
 
@@ -78,6 +79,35 @@ PSYCHOLOGY_TERMS = (
     "counsel",
     "counselling",
     "counseling",
+    "friend",
+    "friendship",
+    "argument",
+    "arguing",
+    "fight with",
+    "problem with my friend",
+    "relationship",
+    "love",
+    "in love",
+    "crush",
+    "girl",
+    "boy",
+    "girlfriend",
+    "boyfriend",
+    "breakup",
+    "rejected",
+    "heartbroken",
+    "focus",
+    "focused",
+    "concentrate",
+    "concentration",
+    "distracted",
+    "distraction",
+    "procrastination",
+    "motivation",
+    "can't study",
+    "cannot study",
+    "study",
+    "exam",
 )
 
 HIGH_RISK_TERMS = (
@@ -222,6 +252,25 @@ def looks_like_psychology(text: str) -> bool:
         "no friends",
         "nobody talks to me",
         "nobody understands me",
+        "friend",
+        "friendship",
+        "argument",
+        "arguing",
+        "relationship",
+        "love",
+        "crush",
+        "girl",
+        "boy",
+        "breakup",
+        "heartbroken",
+        "focus",
+        "concentrate",
+        "concentration",
+        "distracted",
+        "distraction",
+        "procrastination",
+        "motivation",
+        "study",
     )
     return any(
         term in lowered
@@ -246,6 +295,19 @@ def looks_like_loneliness(text: str) -> bool:
         "nobody understands me",
     )
     return any(term in lowered for term in loneliness_terms)
+
+
+def looks_like_relationship_or_focus(text: str) -> bool:
+    lowered = text.lower()
+    terms = (
+        "friend", "friendship", "argument", "arguing", "fight with",
+        "problem with my friend", "relationship", "love", "in love",
+        "crush", "girl", "boy", "girlfriend", "boyfriend", "breakup",
+        "rejected", "heartbroken", "focus", "focused", "concentrate",
+        "concentration", "distracted", "distraction", "procrastination",
+        "motivation", "can't study", "cannot study", "study",
+    )
+    return any(term in lowered for term in terms)
 
 
 def _index_is_current() -> bool:
@@ -490,10 +552,13 @@ def grounded_psychology_answer(
     psych_model,
     retriever,
 ):
-    # Expand loneliness-related queries so short messages like "I am lonely"
-    # can retrieve the dedicated source using its related wording.
+    # Expand common student-support queries so short or informal wording
+    # can retrieve the correct source instead of being sent to the CPU fallback.
     query_for_retrieval = question
     loneliness_query = looks_like_loneliness(question)
+    relationship_focus_query = looks_like_relationship_or_focus(question)
+    support_query = loneliness_query or relationship_focus_query
+
     if loneliness_query:
         query_for_retrieval = (
             question
@@ -501,30 +566,40 @@ def grounded_psychology_answer(
             + "left out disconnected social connection emotional support "
             + "trusted friend family classmate teacher counsellor"
         )
+    elif relationship_focus_query:
+        query_for_retrieval = (
+            question
+            + " friendship conflict disagreement communicate calmly "
+            + "respect boundaries romantic feelings crush relationship "
+            + "accept other person's choice student emotional support "
+            + "concentration focus distractions study task break realistic routine"
+        )
 
+    support_threshold = 0.45 if support_query else MIN_RETRIEVAL_SCORE
     matches = retriever.search(
         query_for_retrieval,
         top_k=TOP_K,
-        min_score=0.48 if loneliness_query else MIN_RETRIEVAL_SCORE,
+        min_score=support_threshold,
     )
 
-    effective_threshold = 0.48 if loneliness_query else MIN_RETRIEVAL_SCORE
     strong_matches = [
-        item
-        for item in matches
-        if float(item["score"]) >= effective_threshold
+        item for item in matches
+        if float(item["score"]) >= support_threshold
     ]
 
-    # Exact-topic fallback: if retrieval still rejects a short loneliness
-    # message, use the curated loneliness source instead of giving a dead-end
-    # "not enough information" response. No unsupported general-model answer
-    # is used; Qwen still answers using this source as its only context.
-    if not strong_matches and loneliness_query:
-        loneliness_source = SOURCE_DIR / "06_loneliness_and_social_connection.md"
-        if loneliness_source.is_file():
+    # If retrieval still fails for a recognised student-support topic, use
+    # the curated topic source as the only context for the Qwen answer.
+    if not strong_matches and support_query:
+        source_name = (
+            "06_loneliness_and_social_connection.md"
+            if loneliness_query
+            else "07_friendship_romantic_feelings_and_focus.md"
+        )
+        topic_source = SOURCE_DIR / source_name
+        if topic_source.is_file():
             strong_matches = [{
-                "source": str(loneliness_source),
-                "text": loneliness_source.read_text(encoding="utf-8"),
+                "source": str(topic_source),
+                "text": topic_source.read_text(encoding="utf-8"),
                 "score": None,
             }]
 
@@ -609,8 +684,15 @@ def route_question(
         # Lightweight conversational fallback keeps CPU-only Colab memory
         # available for the fine-tuned psychology model.
         lowered = normalized.strip().lower().strip(" .!?")
-        if lowered in {"hi", "hello", "hey", "hiya", "good morning", "good afternoon", "good evening"}:
-            answer = "Hi! I'm LAX, your student wellbeing companion. What would you like to talk about?"
+        casual_greeting = re.fullmatch(
+            r"(?:hi+|hey+|hello+|hiya+|yo+)(?:\s+(?:bro|buddy|friend|lax|there))?",
+            lowered,
+        )
+        if casual_greeting or lowered in {
+            "hi", "hello", "hey", "hiya", "good morning",
+            "good afternoon", "good evening"
+        }:
+            answer = "Hii bro! I'm LAX, your student wellbeing companion. What's on your mind?"
         elif lowered in {"how are you", "how are you doing", "how's it going", "how is it going"}:
             answer = "I'm here and ready to help. How are you feeling today?"
         elif lowered in {"thanks", "thank you", "thanks lax", "thank you lax"}:
@@ -621,9 +703,11 @@ def route_question(
             answer = "I can help with student wellbeing topics such as academic stress, sleep routines, coping, loneliness, and when to seek support."
         else:
             answer = (
-                "I'm running in CPU-only mode to keep memory available for LAX's "
-                "grounded student-wellbeing model. Please ask me about academic "
-                "stress, sleep, coping, loneliness, or finding support."
+                "I'm here with you. Could you tell me a little more about what's "
+                "happening, or what kind of help you need? I can help you think "
+                "through student life, relationships, study difficulties, and "
+                "everyday decisions. For questions requiring factual wellbeing "
+                "guidance, I'll use LAX's curated knowledge when relevant."
             )
         return answer, [], "general_cpu_fallback"
 
