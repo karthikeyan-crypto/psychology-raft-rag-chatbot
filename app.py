@@ -873,7 +873,21 @@ def route_question(
             "psychology_abstain",
         )
 
-    # 4. Everything else goes directly to the general open-weight model.
+    # 4. In CPU Ollama mode, use the same local model for general chat too.
+    # Psychology queries still take the grounded-RAG branch above.
+    if OLLAMA_CPU_MODE:
+        messages = [
+            {"role": "system", "content": GENERAL_SYSTEM_PROMPT},
+            *st.session_state.get("messages", [])[-6:],
+            {"role": "user", "content": normalized},
+        ]
+        return (
+            _ollama_chat(messages, max_new_tokens=GENERAL_MAX_NEW_TOKENS),
+            [],
+            "general",
+        )
+
+    # Otherwise, use the optional Transformers general model or lightweight fallback.
     general_tokenizer, general_model = get_general_resources()
 
     if general_model is None:
