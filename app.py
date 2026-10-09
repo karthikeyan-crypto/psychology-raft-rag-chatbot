@@ -20,8 +20,25 @@ from inference.rag_local import (
 
 APP_DIR = Path(__file__).resolve().parent
 
-# Psychology model: fine-tuned specifically for LAX grounded answers.
+# CPU fast mode uses a smaller instruction model to reduce waiting time when
+# Colab's GPU quota is exhausted. The curated RAG sources and safety routing
+# remain enabled, but the saved LoRA adapter is used only in normal mode.
 PSYCH_MODEL_ID = "Qwen/Qwen2.5-1.5B-Instruct"
+CPU_FAST_MODEL_ID = "Qwen/Qwen2.5-0.5B-Instruct"
+CPU_FAST_MODE = (
+    not torch.cuda.is_available()
+    and os.getenv("LAX_CPU_FAST_MODE", "1").strip().lower()
+    not in {"0", "false", "no", "off"}
+)
+
+# Avoid CPU oversubscription on small Colab runtimes.
+if not torch.cuda.is_available():
+    torch.set_num_threads(max(1, min(4, os.cpu_count() or 2)))
+    try:
+        torch.set_num_interop_threads(1)
+    except RuntimeError:
+        # PyTorch may have initialized inter-op work already; continue safely.
+        pass
 
 # General open-weight model: casual conversation, spelling/grammar cleanup,
 # and non-psychology questions. Qwen's model card documents non-thinking mode
@@ -38,11 +55,10 @@ ADAPTER_PATH = Path(
 INDEX_DIR = APP_DIR / "data" / "vector_index"
 SOURCE_DIR = APP_DIR / "data" / "sources"
 
-# Keep retrieval/generation small for fast Colab T4 responses.
-TOP_K = 4
+# Smaller retrieval context and shorter replies in CPU fast mode reduce latency.
+TOP_K = 2 if CPU_FAST_MODE else (3 if not torch.cuda.is_available() else 4)
 MIN_RETRIEVAL_SCORE = DEFAULT_MIN_RETRIEVAL_SCORE
-# CPU generation needs a little more room to avoid cutting replies mid-sentence.
-PSYCH_MAX_NEW_TOKENS = 120 if not torch.cuda.is_available() else 160
+PSYCH_MAX_NEW_TOKENS = 64 if CPU_FAST_MODE else (120 if not torch.cuda.is_available() else 160)
 GENERAL_MAX_NEW_TOKENS = 96
 CORRECTION_MAX_NEW_TOKENS = 48
 
@@ -463,11 +479,12 @@ def load_lax_resources():
             f"LoRA adapter not found at: {ADAPTER_PATH}"
         )
 
-    adapter_file = ADAPTER_PATH / "adapter_model.safetensors"
-    if not adapter_file.exists():
-        raise FileNotFoundError(
-            f"LoRA weights not found at: {adapter_file}"
-        )
+    if not CPU_FAST_MODE:
+        adapter_file = ADAPTER_PATH / "adapter_model.safetensors"
+        if not adapter_file.exists():
+            raise FileNotFoundError(
+                f"LoRA weights not found at: {adapter_file}"
+            )
 
     if not _index_is_current():
         st.info("Updating the wellbeing knowledge index...")
@@ -475,23 +492,30 @@ def load_lax_resources():
 
     retriever = LocalRetriever(INDEX_DIR)
 
-    tokenizer = AutoTokenizer.from_pretrained(PSYCH_MODEL_ID)
+    active_model_id = CPU_FAST_MODEL_ID if CPU_FAST_MODE else PSYCH_MODEL_ID
+    tokenizer = AutoTokenizer.from_pretrained(active_model_id)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
     base_model = AutoModelForCausalLM.from_pretrained(
-        PSYCH_MODEL_ID,
+        active_model_id,
         **_model_loading_kwargs(),
     )
     base_model.config.use_cache = True
 
-    psych_model = PeftModel.from_pretrained(
-        base_model,
-        str(ADAPTER_PATH),
-        is_trainable=False,
-    )
-    psych_model.eval()
+    if CPU_FAST_MODE:
+        # The 1.5B adapter cannot be applied to a different-sized base model.
+        # Keep the RAG grounding and safety path, and use this smaller model
+        # only to make generation practical on CPU-only runtimes.
+        psych_model = base_model
+    else:
+        psych_model = PeftModel.from_pretrained(
+            base_model,
+            str(ADAPTER_PATH),
+            is_trainable=False,
+        )
 
+    psych_model.eval()
     return tokenizer, psych_model, retriever
 
 
@@ -821,6 +845,14 @@ if "messages" not in st.session_state:
 
 st.title("LAX")
 st.caption("Your student wellbeing companion")
+
+if CPU_FAST_MODE:
+    st.info(
+        "CPU fast mode is active: LAX uses a smaller Qwen2.5-0.5B model without "
+        "the saved LoRA adapter to reduce waiting time. Curated-source retrieval "
+        "and high-risk safety routing remain enabled. Responses may be less "
+        "consistent than the fine-tuned 1.5B model."
+    )
 
 st.markdown(
     "Talk naturally. LAX uses grounded wellbeing guidance for psychology "
